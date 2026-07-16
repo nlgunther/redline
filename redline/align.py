@@ -9,23 +9,24 @@ pairs at a given level become plain insertions/deletions rather than being
 forced together -- see _align_sequence.
 
 Assumption (flagged, not blocking): candidate pairing within a hole uses
-a small O(n*m) alignment DP scored by Jaccard overlap, since n and m here
-are the units inside one hole (a handful of paragraphs/sentences), not the
-whole document -- Phase 0's block ordering already did the expensive
-whole-document assignment. If a hole turns out to be huge in practice,
-this DP is the place to revisit.
+a small O(n*m) alignment DP scored by similarity_score() (see
+similarity.py), since n and m here are the units inside one hole (a
+handful of paragraphs/sentences), not the whole document -- Phase 0's
+block ordering already did the expensive whole-document assignment. If a
+hole turns out to be huge in practice, this DP is the place to revisit.
+The DP is skipped entirely for the 1-vs-1 case (see _align_sequence).
 """
 
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 
-from .similarity import jaccard
+from .similarity import similarity_score
 from .text import split_sentences, split_words
 
 GRANULARITY_LADDER = ["paragraph", "sentence", "word"]
 GOOD_ENOUGH = {"paragraph": 0.35, "sentence": 0.55}
 MIN_TOKENS = 6
-PAIR_THRESHOLD = 0.15  # minimum Jaccard score to accept a candidate pairing
+PAIR_THRESHOLD = 0.15  # minimum similarity score to accept a candidate pairing
 
 
 @dataclass(frozen=True)
@@ -113,9 +114,20 @@ def _split(text, level) -> list[str]:
 
 
 def _align_sequence(units_a: list[str], units_b: list[str]):
-    """Needleman-Wunsch-style global alignment maximizing total Jaccard
+    """Needleman-Wunsch-style global alignment maximizing total similarity
     score, allowing any unit to go unmatched at zero cost. O(n*m), which
-    is cheap for the small unit counts inside one hole."""
+    is cheap for the small unit counts inside one hole.
+
+    Special case: when each side has exactly one unit, there is no
+    pairing decision to make -- they're the only candidates for each
+    other, so pair them unconditionally rather than gating through
+    PAIR_THRESHOLD. Without this, two totally dissimilar sole occupants
+    of a hole render as a disconnected Delete+Insert instead of one
+    Edit, even though "being the only candidate on each side" is by
+    itself sufficient justification to pair them.
+    """
+    if len(units_a) == 1 and len(units_b) == 1:
+        return [(0, 0)], [], []
     scores = _dp_scores(units_a, units_b)
     return _traceback(units_a, units_b, scores)
 
@@ -125,7 +137,7 @@ def _dp_scores(units_a, units_b):
     scores = [[0.0] * (m + 1) for _ in range(n + 1)]
     for i in range(1, n + 1):
         for j in range(1, m + 1):
-            match = scores[i - 1][j - 1] + jaccard(units_a[i - 1], units_b[j - 1])
+            match = scores[i - 1][j - 1] + similarity_score(units_a[i - 1], units_b[j - 1])
             scores[i][j] = max(match, scores[i - 1][j], scores[i][j - 1])
     return scores
 
@@ -134,7 +146,7 @@ def _traceback(units_a, units_b, scores):
     i, j = len(units_a), len(units_b)
     pairs = []
     while i > 0 and j > 0:
-        pair_score = jaccard(units_a[i - 1], units_b[j - 1])
+        pair_score = similarity_score(units_a[i - 1], units_b[j - 1])
         if scores[i][j] == scores[i - 1][j - 1] + pair_score and pair_score >= PAIR_THRESHOLD:
             pairs.append((i - 1, j - 1))
             i, j = i - 1, j - 1

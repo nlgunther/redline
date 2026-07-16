@@ -3,11 +3,19 @@ name = "redline"
 version = "0.1.0"
 description = "Lightweight document redlining for large, heavily-revised documents"
 requires-python = ">=3.10"
-dependencies = []
+dependencies = [
+    # readers must be installed first: pip install -e path/to/readers
+    # (redline/text.py imports split_paragraphs/split_sentences from it
+    # unconditionally, so this is a required dependency, not optional --
+    # see readers/JOURNAL_2026-07-12.md). readers itself has zero hard
+    # dependencies, so this doesn't pull in pypdf/python-docx/openpyxl.
+    "readers",
+]
 
 [project.optional-dependencies]
 docx = ["python-docx>=1.0"]
 odt = ["odfpy>=1.4"]
+pdf = ["readers[pdf]"]
 
 [project.scripts]
 redline = "redline.cli:main"

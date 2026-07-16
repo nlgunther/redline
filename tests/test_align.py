@@ -1,4 +1,4 @@
-from redline.align import Delete, Edit, Identity, Insert, align_paragraphs, align_units
+from redline.align import Delete, Edit, Identity, Insert, _align_sequence, align_paragraphs, align_units
 
 
 def test_identical_text_returns_identity():
@@ -54,3 +54,35 @@ def test_deletion_of_removed_paragraph():
 
 def test_empty_inputs_produce_no_ops():
     assert align_paragraphs([], []) == []
+
+
+def test_1v1_pairs_unconditionally_even_when_totally_dissimilar():
+    # Regression test: being the only candidate on each side is sufficient
+    # justification to pair, regardless of PAIR_THRESHOLD (0.15). Before
+    # this fix, a 1-vs-1 hole with no word overlap fell through to a
+    # disconnected Delete+Insert instead of one Edit.
+    pairs, unmatched_a, unmatched_b = _align_sequence(
+        ["Completely unrelated sentence here."], ["Totally different content indeed."]
+    )
+    assert pairs == [(0, 0)]
+    assert unmatched_a == []
+    assert unmatched_b == []
+
+
+def test_1v1_forced_pairing_produces_single_edit_end_to_end():
+    ops = align_paragraphs(
+        ["Completely unrelated sentence here."], ["Totally different content indeed."]
+    )
+    assert len(ops) == 1
+    assert isinstance(ops[0], Edit)
+
+
+def test_1vM_still_gated_by_pair_threshold():
+    # With more than one candidate on a side, an unrelated pairing must
+    # still be rejected by PAIR_THRESHOLD -- the unconditional-pairing
+    # special case is 1-vs-1 only, not "small hole in general".
+    pairs, unmatched_a, unmatched_b = _align_sequence(
+        ["Alpha bravo charlie delta.", "Totally different content indeed."],
+        ["Totally different content indeed, restated."],
+    )
+    assert (0, 0) not in pairs

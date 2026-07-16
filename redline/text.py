@@ -7,10 +7,18 @@ or hashed). Normalization here only removes incidental typographic noise
 be legally meaningful (a defined term vs. a generic word), so it must
 still show up in the output; see blocks.py's transform ladder for how
 case changes are still found cheaply without being hidden.
+
+``split_paragraphs``/``split_sentences`` moved to the shared ``readers``
+package 2026-07-12 (de-dup with readers/segment.py, which had a near-
+identical copy) -- re-exported here so existing callers
+(``from .text import split_paragraphs``) don't need to change. See
+``docs/JOURNAL_2026-07-12.md`` for the full cross-package writeup.
 """
 
 import re
 import unicodedata
+
+from readers import split_paragraphs, split_sentences
 
 _QUOTE_MAP = str.maketrans({
     "“": '"', "”": '"', "‘": "'", "’": "'",
@@ -18,10 +26,6 @@ _QUOTE_MAP = str.maketrans({
 })
 _WHITESPACE_RE = re.compile(r"\s+")
 _WORD_RE = re.compile(r"\S+")
-# Split after sentence-ending punctuation followed by whitespace and a
-# capital letter, digit, quote, or opening paren. Doesn't special-case
-# abbreviations (Mr., etc.) -- acceptable for v1, see docs/API.md.
-_SENTENCE_RE = re.compile(r"(?<=[.!?])\s+(?=[A-Z0-9(\"'])")
 
 
 def normalize_whitespace(text: str) -> str:
@@ -40,25 +44,6 @@ def normalize_case(text: str) -> str:
     """Whitespace-normalize, then fold case. Used only as a matching key
     (see blocks.py) -- never used for rendered output."""
     return normalize_whitespace(text).lower()
-
-
-def split_paragraphs(text: str) -> list[str]:
-    """Split plain text into paragraphs on blank lines."""
-    paras = re.split(r"\n\s*\n", text.strip())
-    return [p.strip() for p in paras if p.strip()]
-
-
-def split_sentences(text: str) -> list[str]:
-    """Split a paragraph into sentences with a lightweight regex splitter.
-
-    Example:
-        split_sentences("Pay by May 1. Late fees apply after that.")
-        # -> ["Pay by May 1.", "Late fees apply after that."]
-    """
-    text = text.strip()
-    if not text:
-        return []
-    return [s.strip() for s in _SENTENCE_RE.split(text) if s.strip()]
 
 
 def split_words(text: str) -> list[str]:

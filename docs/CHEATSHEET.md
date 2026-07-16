@@ -64,7 +64,8 @@ optional dependency, unreadable document), `2` bad arguments (from
 | `GRANULARITY_LADDER` | `align.py` | paragraph → sentence → word | Phase 1 recursion levels |
 | `GOOD_ENOUGH` | `align.py` | `{paragraph: 0.35, sentence: 0.55}` | difflib ratio needed to stop recursing |
 | `MIN_TOKENS` | `align.py` | `6` | floor below which recursion always stops |
-| `PAIR_THRESHOLD` | `align.py` | `0.15` | minimum Jaccard score to accept a candidate pairing |
+| `PAIR_THRESHOLD` | `align.py` | `0.15` | minimum similarity score to accept a candidate pairing (skipped for 1-vs-1 holes, which always pair) |
+| `PAIR_OVERLAP_THRESHOLD` | `similarity.py` | `0.5` | overlap coefficient above which containment boosts the similarity score past plain Jaccard |
 | `digest_size` | `hashing.light_hash` | `8` (64-bit) | hash width for Phase 0's lookup table |
 
 ## Gotchas

@@ -32,9 +32,12 @@ a legible diff once `difflib`'s own ratio clears a bar for that
 granularity (staged behind `real_quick_ratio()`/`quick_ratio()` so the
 full comparison only runs when it might matter); otherwise, if still
 splittable, the pair is broken into the next level's units and
-re-aligned via a small alignment DP scored by Jaccard word-overlap.
-Rejected candidates become plain insertions/deletions instead of being
-forced into a bad pairing.
+re-aligned via a small alignment DP scored by `similarity.similarity_score`
+(a threshold-gated blend of Jaccard and the overlap coefficient — see
+below). As a special case, a hole with exactly one unit on each side pairs
+unconditionally, skipping the DP and its acceptance threshold entirely —
+see `align._align_sequence`. Rejected candidates become plain
+insertions/deletions instead of being forced into a bad pairing.
 
 ## Module: `redline.text`
 
@@ -82,10 +85,24 @@ blocks, ua, ub = find_blocks(["Same.", "Old text."], ["Same.", "New text."])
 
 ## Module: `redline.similarity`
 
-### `jaccard(a: str, b: str) -> float`
-Case-insensitive word-set overlap. Used only to score candidate pairings
-in Phase 1 — never affects what's shown, only which sub-units get
-recursed into together.
+### `similarity_score(a: str, b: str) -> float`
+Case-insensitive word-set similarity for candidate pairing. Below
+`PAIR_OVERLAP_THRESHOLD` (default `0.5`, measured as the overlap
+coefficient `|A∩B|/min(|A|,|B|)`), this is plain Jaccard
+(`|A∩B|/|A∪B|`). Above the threshold, it ramps linearly from Jaccard up
+to `1.0` as overlap approaches `1.0` — this fixes plain Jaccard's
+systematic under-scoring of genuine containment (a short unit fully
+absorbed into a longer edited one), without inflating scores for short,
+unrelated text that coincidentally shares words. Used only to score
+candidate pairings in Phase 1 — never affects what's shown, only which
+sub-units get recursed into together.
+
+**Example:**
+```python
+similarity_score("the tenant shall maintain the property",
+                  "the tenant shall maintain the property and grounds in good repair")
+# -> ~1.0 (near-total containment, versus ~0.19 for plain Jaccard)
+```
 
 ## Module: `redline.align`
 
@@ -132,17 +149,59 @@ whatever the authoring tool assigned (e.g. `"Standard"`, `"P1"`). Fine
 for now since style still isn't wired through to rendering for either
 format — see "Known limitations" below.
 
+### `from_pdf(path) -> list[Paragraph]`
+Requires the `readers` package with its `pdf` extra (`pypdf`). Raises
+`ImportError` (with an install hint) if `readers` isn't installed at all,
+or if `readers` is installed but `pypdf` isn't; raises `ValueError` for
+any other unreadable-PDF outcome (not found, corrupt, empty, permission
+denied). Extraction and section recovery are both delegated to `readers`
+(`read_file` + `split_into_sections`) — see `readers/JOURNAL_2026-07-12.md`
+("Option A") for why this lives in the shared package rather than
+`redline`, and why it uses `split_into_sections` rather than
+`recover_paragraphs` directly (ordinary paragraph boundaries have no
+reliable signal in flat PDF text; two revisions of the same document can
+merge that ambiguous text differently, which used to render near-
+identical paragraphs as a full delete+insert instead of a word-level
+edit). Each detected heading becomes its own `Paragraph` with
+`style=f"Heading {level}"` (level is text-derived — a section-number
+prefix like "2.3" gives real depth, an unnumbered heading defaults to 1;
+pypdf exposes no font-size signal); the (usually large) body of ordinary
+text between headings is one `Paragraph` with `style="Normal"`, left for
+`redline`'s own sentence-level recursive alignment to diff rather than
+split further here.
+
 ## Module: `redline.render`
 
-### `render_html(items: list) -> str`
+### `render_html(items: list, style_by_text: dict | None = None) -> str`
 Renders a list of `Block`/`Identity`/`Edit`/`Insert`/`Delete` items to a
 standalone HTML string (`<ins>`/`<del>`, inline CSS, no external assets).
+
+`style_by_text` (added 2026-07-12, see `readers/JOURNAL_2026-07-12.md`
+"Option A"): an optional map of exact paragraph text → style (e.g.
+`"Heading 1"`), used to render that paragraph as `<h1>`-`<h6>` instead of
+`<p>`. Looked up per rendered item via the internal `_tag_for(text,
+style_by_text)` helper — for `Edit`, tries `text_a` then falls back to
+`text_b`. Deliberately text-keyed rather than adding a style field to
+`Block`/`Identity`/`Edit`/`Insert`/`Delete` themselves: every one of
+those already carries the paragraph text verbatim, so a lookup gets the
+same result without widening those dataclasses' shape. Currently only
+`pipeline.compare_pdf` builds and passes a `style_by_text`; every other
+`compare_*` still renders plain `<p>` for every paragraph.
+
+Word-level "replace" spans with mismatched token counts get a
+character-level diff on the joined spans if either `SequenceMatcher.ratio()`
+clears `WORD_CHAR_THRESHOLD`, or the shorter side's words (punctuation
+stripped) are all found in the longer side (`_shorter_side_is_contained`)
+— the latter catches cases a raw character ratio misses because it's
+penalized by pure length disparity (e.g. a short token followed by a much
+longer appended clause that still contains the original word).
 
 ## Module: `redline.pipeline`
 
 ### `compare_text(old_text: str, new_text: str) -> str`
 ### `compare_docx(old_path, new_path) -> str`
 ### `compare_odt(old_path, new_path) -> str`
+### `compare_pdf(old_path, new_path) -> str`
 Top-level entry points. Extract paragraphs, run Phase 0, walk the anchor
 spine filling each hole via Phase 1, render to HTML.
 
@@ -201,12 +260,14 @@ code = main(["missing.docx", "contract_v2.docx"])
 - **Formatting is out of scope.** Bold/italic/color/font are never
   compared; only text.
 - **Tables are not handled.** `from_docx` skips table content entirely.
-- **Headings render as plain paragraphs.** `Paragraph.style` is captured
-  by `ingest.from_docx` but not yet threaded through Phase 0/1/render —
-  a caller who wants heading-aware output needs to extend `Block` and the
-  `Insert`/`Delete`/`Edit` dataclasses to carry style, and update
-  `render.py` to emit `<h1>`-`<h6>` for heading styles. Left as a
-  documented next step rather than done speculatively.
+- **Headings render as `<h1>`-`<h6>` only for the PDF path.**
+  `compare_pdf` builds a `style_by_text` map and threads it through
+  `render_html` (see `render_html`'s entry above). `Paragraph.style` is
+  also captured by `ingest.from_docx`/`from_odt`, but `compare_docx`/
+  `compare_odt` don't yet build or pass a `style_by_text` map, so headings
+  from those formats still render as plain `<p>` — a natural, not-yet-done
+  follow-up (the plumbing already exists; it just isn't wired for those
+  two entry points).
 - **No native Word tracked-changes handling.** A `.docx` that already
   contains `<w:ins>`/`<w:del>` markup is read as if fully accepted;
   `python-docx`'s high-level API doesn't expose revision marks.
@@ -214,11 +275,24 @@ code = main(["missing.docx", "contract_v2.docx"])
   as a clean delete + insert, not a labeled move. The anchor mechanism
   that would make move-labeling possible is already in place
   (`Block.index_a`/`index_b` gaps), but the renderer doesn't yet surface it.
-- **Similarity scoring is plain Jaccard**, not the background-corrected
-  (document-frequency-weighted) scoring discussed during design for
-  telling apart near-duplicate boilerplate clauses. Simpler default for
-  v1; swap `similarity.jaccard` for a fancier scorer if boilerplate
-  collisions turn out to be a real problem in practice.
+- **Similarity scoring is a Jaccard/overlap-coefficient blend**, not the
+  background-corrected (document-frequency-weighted) scoring discussed
+  during design for telling apart near-duplicate boilerplate clauses.
+  Simpler default for v1; swap `similarity.similarity_score` for a
+  fancier scorer if boilerplate collisions turn out to be a real problem
+  in practice.
 - **CLI format auto-detection only inspects `old`.** A mismatched pair
   (different or missing extensions) needs an explicit `--format`; the CLI
   doesn't try to reconcile disagreeing extensions or sniff file content.
+- **PDF section boundaries are a best-effort heuristic, not exact.**
+  `from_pdf` relies on `readers.split_into_sections` (itself built on
+  `readers.recover_paragraphs`), which infers headings from line-ending
+  punctuation and heading-like lines (a text heuristic — no font-size
+  signal, since pypdf's extracted text carries no such information). It
+  can occasionally mis-detect a heading, and ordinary (non-heading)
+  paragraph structure within a section's body is intentionally *not*
+  preserved — see `readers/segment.py`'s docstring and
+  `readers/JOURNAL_2026-07-12.md` ("Option A") for why. pypdf also loses
+  some inter-word spacing around inline math/subscripts in certain font
+  encodings — a pass-through limitation, not something `redline` can
+  correct.

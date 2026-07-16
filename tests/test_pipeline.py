@@ -1,6 +1,7 @@
 from redline.align import Delete, Edit, Insert
 from redline.blocks import Block
-from redline.pipeline import compare_text
+from redline.pipeline import _compare_paragraphs, compare_text
+from redline.render import render_html
 
 
 def _kinds(items):
@@ -39,8 +40,9 @@ def test_case_only_change_visible_in_final_html():
     old = "The Agreement is binding on both parties."
     new = "The agreement is binding on both parties."
     html = compare_text(old, new)
-    assert "<del>Agreement</del>" in html
-    assert "<ins>agreement</ins>" in html
+    # Character-level word diffing (see render._render_token_pair) narrows
+    # this to just the differing letter rather than the whole word.
+    assert "<del>A</del><ins>a</ins>greement" in html
 
 
 def test_pure_insertion_document():
@@ -55,3 +57,16 @@ def test_identical_documents_produce_only_identity():
     html = compare_text(text, text)
     assert "<del>" not in html
     assert "<ins>" not in html
+
+
+def test_style_by_text_renders_heading_paragraph_as_heading_tag():
+    # Simulates what compare_pdf does: build style_by_text from headings
+    # detected on either side, thread it through render_html. Doesn't
+    # require an actual PDF fixture -- _compare_paragraphs/render_html are
+    # the same functions compare_pdf calls internally.
+    old = ["1 Intro", "Body text is unchanged here."]
+    new = ["1 Intro", "Body text is unchanged here."]
+    style_by_text = {"1 Intro": "Heading 1"}
+    html = render_html(_compare_paragraphs(old, new), style_by_text)
+    assert "<h1 class='identity'>1 Intro</h1>" in html
+    assert "<p class='identity'>Body text is unchanged here.</p>" in html

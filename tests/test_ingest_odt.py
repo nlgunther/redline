@@ -46,6 +46,7 @@ def test_compare_odt_end_to_end(tmp_path):
 
     html = compare_odt(old_path, new_path)
 
-    assert "<del>$100</del>" in html
-    assert "<ins>$150</ins>" in html
+    # Character-level word diffing (see render._render_token_pair) narrows
+    # this to the differing digit rather than the whole token.
+    assert "$1<ins>5</ins>0<del>0</del>" in html
     assert html.count("class='identity'") == 2  # heading + unchanged paragraph

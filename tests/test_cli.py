@@ -32,8 +32,9 @@ def test_text_files_compared_and_written_to_stdout(tmp_path, capsys):
 
     assert code == 0
     out = capsys.readouterr().out
-    assert "<del>$100</del>" in out
-    assert "<ins>$150</ins>" in out
+    # Character-level word diffing (see render._render_token_pair) narrows
+    # this to the differing digit rather than the whole token.
+    assert "$1<ins>5</ins>0<del>0</del>" in out
 
 
 def test_output_flag_writes_to_file(tmp_path):
@@ -60,8 +61,9 @@ def test_auto_detects_docx_from_extension(tmp_path):
 
     assert code == 0
     html = out_path.read_text()
-    assert "<del>$100</del>" in html
-    assert "<ins>$150</ins>" in html
+    # Character-level word diffing (see render._render_token_pair) narrows
+    # this to the differing digit rather than the whole token.
+    assert "$1<ins>5</ins>0<del>0</del>" in html
 
 
 def test_auto_detects_odt_from_extension(tmp_path):
@@ -75,8 +77,9 @@ def test_auto_detects_odt_from_extension(tmp_path):
 
     assert code == 0
     html = out_path.read_text()
-    assert "<del>$100</del>" in html
-    assert "<ins>$150</ins>" in html
+    # Character-level word diffing (see render._render_token_pair) narrows
+    # this to the differing digit rather than the whole token.
+    assert "$1<ins>5</ins>0<del>0</del>" in html
 
 
 def test_explicit_format_flag_overrides_extension(tmp_path):
@@ -91,7 +94,7 @@ def test_explicit_format_flag_overrides_extension(tmp_path):
     code = main([str(old), str(new), "--format", "docx", "-o", str(out_path)])
 
     assert code == 0
-    assert "<del>$100</del>" in out_path.read_text()
+    assert "$1<ins>5</ins>0<del>0</del>" in out_path.read_text()
 
 
 def test_missing_file_reports_clean_error(tmp_path, capsys):

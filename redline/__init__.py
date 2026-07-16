@@ -19,6 +19,6 @@ except Exception:
     # fall back to the version pinned in pyproject.toml. Keep these in sync.
     __version__ = "0.1.0"
 
-from .pipeline import compare_text, compare_docx, compare_odt
+from .pipeline import compare_text, compare_docx, compare_odt, compare_pdf
 
-__all__ = ["compare_text", "compare_docx", "compare_odt", "__version__"]
+__all__ = ["compare_text", "compare_docx", "compare_odt", "compare_pdf", "__version__"]

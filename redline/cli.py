@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 from . import __version__
-from .pipeline import compare_docx, compare_odt, compare_text
+from .pipeline import compare_docx, compare_odt, compare_pdf, compare_text
 
 # Maps a lowercased file suffix to the format name used everywhere else in
 # this module. Anything not listed here (.txt, .md, no extension, ...)
@@ -20,6 +20,7 @@ from .pipeline import compare_docx, compare_odt, compare_text
 _FORMAT_BY_SUFFIX = {
     ".docx": "docx",
     ".odt": "odt",
+    ".pdf": "pdf",
 }
 
 
@@ -59,7 +60,7 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         help="write HTML here instead of stdout",
     )
     parser.add_argument(
-        "-f", "--format", choices=["auto", "text", "docx", "odt"], default="auto",
+        "-f", "--format", choices=["auto", "text", "docx", "odt", "pdf"], default="auto",
         help="input format (default: auto-detect from OLD's file extension)",
     )
     parser.add_argument("--version", action="version", version=f"redline {__version__}")
@@ -79,6 +80,8 @@ def _compare(old: Path, new: Path, fmt: str) -> str:
         return compare_docx(old, new)
     if resolved == "odt":
         return compare_odt(old, new)
+    if resolved == "pdf":
+        return compare_pdf(old, new)
     return compare_text(old.read_text(encoding="utf-8"), new.read_text(encoding="utf-8"))
 
 

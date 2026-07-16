@@ -17,9 +17,12 @@ FILES = [
     ("tests/test_text.py", None),
     ("tests/test_blocks.py", None),
     ("tests/test_align.py", None),
+    ("tests/test_similarity.py", None),
     ("tests/test_pipeline.py", None),
     ("tests/test_ingest_odt.py", None),
+    ("tests/test_ingest_pdf.py", None),
     ("tests/test_cli.py", None),
+    ("tests/test_render.py", None),
     ("pyproject.toml", None),
     ("verify_install.py", None),
 ]

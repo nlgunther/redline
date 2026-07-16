@@ -12,7 +12,7 @@ just for Phase 0 itself.
 
 from .align import align_paragraphs
 from .blocks import Block, find_blocks
-from .ingest import from_docx, from_odt, from_text
+from .ingest import from_docx, from_odt, from_pdf, from_text
 from .render import render_html
 
 
@@ -35,6 +35,34 @@ def compare_odt(old_path, new_path) -> str:
     paras_a = [p.text for p in from_odt(old_path)]
     paras_b = [p.text for p in from_odt(new_path)]
     return render_html(_compare_paragraphs(paras_a, paras_b))
+
+
+def compare_pdf(old_path, new_path) -> str:
+    """Compare two .pdf files and return a standalone HTML redline.
+
+    Unlike compare_text/compare_docx/compare_odt, this threads heading
+    style through to rendering (2026-07-12, see
+    readers/JOURNAL_2026-07-12.md "Option A"): from_pdf's headings are
+    detected via readers.split_into_sections' text heuristic (no font-size
+    signal is available from pypdf). style_by_text maps each heading
+    Paragraph's exact text to its style, looked up by render_html per
+    rendered item -- deliberately not touching Block/Identity/Edit/Insert/
+    Delete's dataclasses (blocks.py/align.py) to carry style themselves,
+    since every one of those already carries the paragraph text verbatim,
+    so a text-keyed lookup gets the same result without widening those
+    types' shape. Only the PDF path is wired this way; extending
+    compare_docx/compare_odt the same way (they already extract style,
+    see ingest.py's module docstring) is a natural follow-up, not done in
+    this pass.
+    """
+    old_paras = from_pdf(old_path)
+    new_paras = from_pdf(new_path)
+    style_by_text = {
+        p.text: p.style for p in old_paras + new_paras if p.style != "Normal"
+    }
+    paras_a = [p.text for p in old_paras]
+    paras_b = [p.text for p in new_paras]
+    return render_html(_compare_paragraphs(paras_a, paras_b), style_by_text)
 
 
 def _compare_paragraphs(paras_a: list[str], paras_b: list[str]) -> list:
