@@ -152,3 +152,47 @@ def test_unrecognized_extension_falls_back_to_text(tmp_path):
     code = main([str(old), str(new)])
 
     assert code == 0
+
+
+def test_cp1252_text_file_is_read_without_crashing(tmp_path, capsys):
+    # Word/Notepad on Windows commonly save .txt as cp1252 ("ANSI"), where
+    # a curly quote is a byte that isn't valid UTF-8 -- this used to raise
+    # a raw UnicodeDecodeError instead of comparing (see cli._read_text_file).
+    old = tmp_path / "old.txt"
+    new = tmp_path / "new.txt"
+    old.write_bytes("The tenant’s fee is $100 per month.".encode("cp1252"))
+    new.write_bytes("The tenant’s fee is $150 per month.".encode("cp1252"))
+
+    code = main([str(old), str(new)])
+
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "$1<ins>5</ins>0<del>0</del>" in out
+
+
+def test_utf8_bom_text_file_does_not_leak_bom_into_output(tmp_path, capsys):
+    # Notepad's "UTF-8" save option prepends a BOM; a plain utf-8 decode
+    # leaves a stray U+FEFF on the first paragraph instead of stripping it.
+    old = tmp_path / "old.txt"
+    new = tmp_path / "new.txt"
+    old.write_bytes("Unchanged paragraph.".encode("utf-8-sig"))
+    new.write_bytes("Unchanged paragraph.".encode("utf-8-sig"))
+
+    code = main([str(old), str(new)])
+
+    assert code == 0
+    assert "\ufeff" not in capsys.readouterr().out
+
+
+def test_binary_text_file_reports_clean_encoding_error(tmp_path, capsys):
+    old = tmp_path / "old.txt"
+    new = tmp_path / "new.txt"
+    old.write_bytes(b"\x80\x81\x82\xff\xfe not valid text")
+    new.write_text("Some text.")
+
+    code = main([str(old), str(new)])
+
+    assert code == 1
+    err = capsys.readouterr().err
+    assert str(old) in err
+    assert "UTF-8" in err and "cp1252" in err

@@ -95,6 +95,11 @@ optional dependency, unreadable document), `2` bad arguments (from
 - **Extension-less files always need `--format`.** Auto-detect falls back
   to `"text"` for any extension it doesn't recognize, which will silently
   misread a `.docx`/`.odt` file that's missing its extension.
+- **Plain-text input tries UTF-8 then cp1252, nothing else.** Covers the
+  common Windows case (a `.txt` saved by Word/Notepad as cp1252 "ANSI")
+  without a charset-detection dependency. A file in some other encoding
+  (e.g. UTF-16) still fails, but with a clear message naming the file
+  instead of a raw byte-offset `UnicodeDecodeError`.
 
 ## Full reference
 

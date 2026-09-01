@@ -72,6 +72,44 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def _read_text_file(path: Path) -> str:
+    """Read a plain-text file, tolerating the encodings Windows editors
+    commonly produce.
+
+    A ``.txt`` that started life in Word or Notepad is frequently saved as
+    cp1252 ("ANSI") rather than UTF-8 -- smart quotes, em dashes, and
+    accented characters all encode as bytes that are invalid UTF-8
+    continuation bytes, so a plain ``read_text(encoding="utf-8")`` used to
+    raise a raw UnicodeDecodeError with nothing but a byte offset to go on.
+    Tried in order: UTF-8 with an optional BOM stripped (``utf-8-sig`` --
+    also fixes a stray leading U+FEFF from Notepad's "UTF-8" save option,
+    which would otherwise show up as an invisible extra character on the
+    first paragraph), then cp1252 (Windows' historical default), which
+    resolves the overwhelming majority of real-world cases without adding
+    a charset-detection dependency to an otherwise lightweight CLI tool.
+
+    Raises:
+        ValueError: if the file decodes as neither -- e.g. it's actually
+            binary data -- naming the file so the error isn't just a byte
+            offset.
+
+    Example:
+        _read_text_file(Path("agreement.txt"))
+        # -> "SIGNED: ..." (works whether the file is UTF-8 or cp1252)
+    """
+    try:
+        return path.read_text(encoding="utf-8-sig")
+    except UnicodeDecodeError:
+        pass
+    try:
+        return path.read_text(encoding="cp1252")
+    except UnicodeDecodeError as exc:
+        raise ValueError(
+            f"{path}: could not decode as UTF-8 or cp1252 (Windows ANSI) -- "
+            f"file may be binary or use another encoding: {exc}"
+        ) from exc
+
+
 def _compare(old: Path, new: Path, fmt: str, detect_moves: bool = True) -> str:
     """Validate both paths up front (regardless of format) so a missing
     file always produces the same clean message, rather than whatever
@@ -87,9 +125,7 @@ def _compare(old: Path, new: Path, fmt: str, detect_moves: bool = True) -> str:
         return compare_odt(old, new, detect_moves)
     if resolved == "pdf":
         return compare_pdf(old, new, detect_moves)
-    return compare_text(
-        old.read_text(encoding="utf-8"), new.read_text(encoding="utf-8"), detect_moves
-    )
+    return compare_text(_read_text_file(old), _read_text_file(new), detect_moves)
 
 
 def _write_output(html: str, output: Path | None) -> None:

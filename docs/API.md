@@ -453,9 +453,20 @@ covers a missing file (checked explicitly up front, before either format's
 reader runs, so the message is the same regardless of format), a missing
 optional dependency (`ImportError` from `ingest.from_docx`/`from_odt`,
 message includes the pip-install hint), or any other failure while reading
-or comparing (corrupt document, encoding error, etc.) — all funneled
-through one broad `except Exception` so the CLI never prints a raw
-traceback to an end user.
+or comparing (corrupt document, an unreadable text-file encoding, etc.) —
+all funneled through one broad `except Exception` so the CLI never prints a
+raw traceback to an end user.
+
+For the text format specifically, "unreadable encoding" is now a narrow
+case: `_compare` reads `old`/`new` via `_read_text_file`, which tries
+UTF-8 (BOM-tolerant, via `utf-8-sig`) and then falls back to cp1252
+(Windows' historical default single-byte encoding) before giving up —
+added because a `.txt` saved by Word or Notepad on Windows is often
+cp1252, not UTF-8, and previously any such file crashed with a raw
+`UnicodeDecodeError` (just a byte offset, no filename) instead of being
+read. Only a file that decodes as neither (e.g. actually binary) still
+reaches exit code 1, and does so with a clear message naming the file and
+both encodings tried.
 
 Argument-parsing errors (`--help`, unknown flags, missing positionals) are
 handled entirely by `argparse` and exit the process directly with code `2`
