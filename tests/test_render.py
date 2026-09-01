@@ -1,6 +1,6 @@
 import html
 
-from redline.align import Delete, Identity, Insert, align_units
+from redline.align import Delete, Identity, Insert, ParagraphGroup, align_units
 from redline.blocks import Block
 from redline.render import (
     _render_edit,
@@ -147,14 +147,14 @@ def test_tag_for_defaults_to_h1_for_non_numeric_heading_style():
 
 
 def test_render_html_wraps_identity_paragraph_matching_style_map_in_heading_tag():
-    items = [Identity("1 Intro")]
+    items = [ParagraphGroup([Identity("1 Intro")])]
     out = render_html(items, {"1 Intro": "Heading 1"})
     assert "<h1 class='identity'>1 Intro</h1>" in out
     assert "<p class='identity'>1 Intro</p>" not in out
 
 
 def test_render_html_wraps_insert_and_delete_heading_text_in_heading_tag():
-    items = [Insert("2 Method"), Delete("3 Results")]
+    items = [ParagraphGroup([Insert("2 Method")]), ParagraphGroup([Delete("3 Results")])]
     style_by_text = {"2 Method": "Heading 1", "3 Results": "Heading 1"}
     out = render_html(items, style_by_text)
     assert "<h1><ins>2 Method</ins></h1>" in out
@@ -162,13 +162,13 @@ def test_render_html_wraps_insert_and_delete_heading_text_in_heading_tag():
 
 
 def test_render_html_leaves_non_heading_paragraphs_as_p_even_with_style_map():
-    items = [Identity("Ordinary body text.")]
+    items = [ParagraphGroup([Identity("Ordinary body text.")])]
     out = render_html(items, {"1 Intro": "Heading 1"})
     assert "<p class='identity'>Ordinary body text.</p>" in out
 
 
 def test_render_html_without_style_map_renders_plain_paragraphs():
-    items = [Identity("1 Intro")]
+    items = [ParagraphGroup([Identity("1 Intro")])]
     out = render_html(items)
     assert "<p class='identity'>1 Intro</p>" in out
     assert "<h1" not in out
@@ -178,3 +178,54 @@ def test_render_html_block_exact_match_uses_heading_tag_when_styled():
     block = Block(index_a=range(0, 1), index_b=range(0, 1), text_a="1 Intro", text_b="1 Intro", transform="exact")
     out = render_html([block], {"1 Intro": "Heading 1"})
     assert "<h1 class='identity'>1 Intro</h1>" in out
+
+
+# --- ParagraphGroup rendering (added 2026-07-21, sentence-flattening rework) ---
+
+
+def test_paragraph_group_renders_mixed_ops_inline_in_one_p_tag():
+    # A group with an unchanged sentence followed by an edited one should
+    # render as ONE <p>, with each sentence's markup inline -- not one <p>
+    # per sentence.
+    from redline.align import Edit
+
+    edit = Edit("Old sentence.", "New sentence.", ("Old", "sentence."), ("New", "sentence."),
+                (("replace", 0, 1, 0, 1), ("equal", 1, 2, 1, 2)))
+    group = ParagraphGroup([Identity("Kept sentence."), edit])
+    out = render_html([group])
+    assert out.count("<p>") == 1
+    assert "Kept sentence." in out
+    assert "<del>Old</del>" in out
+    assert "<ins>New</ins>" in out
+
+
+def test_paragraph_group_all_identity_gets_identity_class():
+    group = ParagraphGroup([Identity("First."), Identity("Second.")])
+    out = render_html([group])
+    assert "<p class='identity'>First. Second.</p>" in out
+
+
+def test_paragraph_group_with_any_change_has_no_identity_class():
+    group = ParagraphGroup([Identity("Unchanged."), Insert("New clause.")])
+    out = render_html([group])
+    assert "class='identity'" not in out
+
+
+# --- moved-content rendering (added 2026-07-22) ---
+
+
+def test_moved_away_renders_a_direction_marker_without_the_full_text():
+    from redline.moves import MovedAway
+
+    group = ParagraphGroup([MovedAway("Relocated sentence.", "below")])
+    out = render_html([group])
+    assert "<span class='moved'>{moved below}</span>" in out
+    assert "Relocated sentence." not in out
+
+
+def test_moved_here_renders_the_full_text_with_a_direction_marker():
+    from redline.moves import MovedHere
+
+    group = ParagraphGroup([MovedHere("Relocated sentence.", "above")])
+    out = render_html([group])
+    assert "<span class='moved'>{moved from above} Relocated sentence.</span>" in out

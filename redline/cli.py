@@ -39,7 +39,7 @@ def main(argv: list[str] | None = None) -> int:
     """
     args = _parse_args(argv)
     try:
-        html = _compare(args.old, args.new, args.format)
+        html = _compare(args.old, args.new, args.format, not args.suppress_moves)
     except Exception as exc:
         print(f"redline: {exc}", file=sys.stderr)
         return 1
@@ -63,11 +63,16 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         "-f", "--format", choices=["auto", "text", "docx", "odt", "pdf"], default="auto",
         help="input format (default: auto-detect from OLD's file extension)",
     )
+    parser.add_argument(
+        "--suppress-moves", action="store_true",
+        help="render relocated content as a plain delete+insert instead of "
+        "a labeled {moved above}/{moved below} pair (default: moves are detected)",
+    )
     parser.add_argument("--version", action="version", version=f"redline {__version__}")
     return parser.parse_args(argv)
 
 
-def _compare(old: Path, new: Path, fmt: str) -> str:
+def _compare(old: Path, new: Path, fmt: str, detect_moves: bool = True) -> str:
     """Validate both paths up front (regardless of format) so a missing
     file always produces the same clean message, rather than whatever
     exception python-docx/odfpy happen to raise for a bad path."""
@@ -77,12 +82,14 @@ def _compare(old: Path, new: Path, fmt: str) -> str:
 
     resolved = fmt if fmt != "auto" else _FORMAT_BY_SUFFIX.get(old.suffix.lower(), "text")
     if resolved == "docx":
-        return compare_docx(old, new)
+        return compare_docx(old, new, detect_moves)
     if resolved == "odt":
-        return compare_odt(old, new)
+        return compare_odt(old, new, detect_moves)
     if resolved == "pdf":
-        return compare_pdf(old, new)
-    return compare_text(old.read_text(encoding="utf-8"), new.read_text(encoding="utf-8"))
+        return compare_pdf(old, new, detect_moves)
+    return compare_text(
+        old.read_text(encoding="utf-8"), new.read_text(encoding="utf-8"), detect_moves
+    )
 
 
 def _write_output(html: str, output: Path | None) -> None:

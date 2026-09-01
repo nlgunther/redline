@@ -17,11 +17,11 @@ losing matches are demoted back to "unmatched" and handled by Phase 1
 instead of forcing a wrong pairing.
 """
 
-import bisect
 from collections import defaultdict
 from dataclasses import dataclass
 
 from .hashing import light_hash
+from .ordering import resolve_order
 from .text import normalize_case, normalize_whitespace
 
 # Strictest first. Each rung only searches paragraphs the previous rung
@@ -70,7 +70,7 @@ def find_blocks(
         remaining_a = [x for x in remaining_a if x[0] not in matched_a]
         remaining_b = [x for x in remaining_b if x[0] not in matched_b]
 
-    kept, dropped = _resolve_order(all_matches)
+    kept, dropped = resolve_order(all_matches)
     blocks = _merge_adjacent(kept, paras_a, paras_b)
 
     unmatched_a = sorted({i for i, _ in remaining_a} | {i for i, _, _ in dropped})
@@ -100,39 +100,6 @@ def _match_rung(paras_a, remaining_a, remaining_b, transform, name):
                 matched_b.add(j)
                 break
     return matched_a, matched_b, new_matches
-
-
-def _resolve_order(matches):
-    """Keep the longest subsequence of matches that is strictly increasing
-    in both document positions (patience-sorting LIS on the B-index,
-    after sorting by A-index). Matches that would cross another kept
-    match are dropped, not forced."""
-    matches = sorted(matches, key=lambda m: m[0])
-    tails: list[int] = []
-    tails_idx: list[int] = []
-    predecessor = [-1] * len(matches)
-
-    for k, (_, j, _) in enumerate(matches):
-        pos = bisect.bisect_left(tails, j)
-        if pos == len(tails):
-            tails.append(j)
-            tails_idx.append(k)
-        else:
-            tails[pos] = j
-            tails_idx[pos] = k
-        predecessor[k] = tails_idx[pos - 1] if pos > 0 else -1
-
-    kept_indices = []
-    k = tails_idx[-1] if tails_idx else -1
-    while k != -1:
-        kept_indices.append(k)
-        k = predecessor[k]
-    kept_indices.reverse()
-
-    kept_set = set(kept_indices)
-    kept = [matches[k] for k in kept_indices]
-    dropped = [m for idx, m in enumerate(matches) if idx not in kept_set]
-    return kept, dropped
 
 
 def _merge_adjacent(matches, paras_a, paras_b):

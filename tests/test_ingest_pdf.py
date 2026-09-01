@@ -33,7 +33,12 @@ def test_from_pdf_extracts_paragraphs_across_pages(tmp_path):
     paras = from_pdf(path)
 
     assert [p.text for p in paras] == ["Executive Summary", "First page body line."]
-    assert all(p.style == "Normal" for p in paras)
+    # "Executive Summary" is a short, title-cased line -- readers.split_into_sections
+    # (Option A, see readers/JOURNAL_2026-07-12.md) detects it as a heading, so it
+    # gets "Heading 1", not "Normal"; only the body text stays "Normal". This
+    # assertion was stale from before Option A landed -- from_pdf used
+    # recover_paragraphs (no heading detection at all) when it was written.
+    assert [p.style for p in paras] == ["Heading 1", "Normal"]
 
 
 def test_compare_pdf_end_to_end(tmp_path):

@@ -13,31 +13,32 @@ just for Phase 0 itself.
 from .align import align_paragraphs
 from .blocks import Block, find_blocks
 from .ingest import from_docx, from_odt, from_pdf, from_text
+from .moves import detect_moves as _detect_moves
 from .render import render_html
 
 
-def compare_text(old_text: str, new_text: str) -> str:
+def compare_text(old_text: str, new_text: str, detect_moves: bool = True) -> str:
     """Compare two plain-text documents and return a standalone HTML redline."""
     paras_a = [p.text for p in from_text(old_text)]
     paras_b = [p.text for p in from_text(new_text)]
-    return render_html(_compare_paragraphs(paras_a, paras_b))
+    return render_html(_compare_paragraphs(paras_a, paras_b, detect_moves))
 
 
-def compare_docx(old_path, new_path) -> str:
+def compare_docx(old_path, new_path, detect_moves: bool = True) -> str:
     """Compare two .docx files and return a standalone HTML redline."""
     paras_a = [p.text for p in from_docx(old_path)]
     paras_b = [p.text for p in from_docx(new_path)]
-    return render_html(_compare_paragraphs(paras_a, paras_b))
+    return render_html(_compare_paragraphs(paras_a, paras_b, detect_moves))
 
 
-def compare_odt(old_path, new_path) -> str:
+def compare_odt(old_path, new_path, detect_moves: bool = True) -> str:
     """Compare two .odt files and return a standalone HTML redline."""
     paras_a = [p.text for p in from_odt(old_path)]
     paras_b = [p.text for p in from_odt(new_path)]
-    return render_html(_compare_paragraphs(paras_a, paras_b))
+    return render_html(_compare_paragraphs(paras_a, paras_b, detect_moves))
 
 
-def compare_pdf(old_path, new_path) -> str:
+def compare_pdf(old_path, new_path, detect_moves: bool = True) -> str:
     """Compare two .pdf files and return a standalone HTML redline.
 
     Unlike compare_text/compare_docx/compare_odt, this threads heading
@@ -62,12 +63,13 @@ def compare_pdf(old_path, new_path) -> str:
     }
     paras_a = [p.text for p in old_paras]
     paras_b = [p.text for p in new_paras]
-    return render_html(_compare_paragraphs(paras_a, paras_b), style_by_text)
+    return render_html(_compare_paragraphs(paras_a, paras_b, detect_moves), style_by_text)
 
 
-def _compare_paragraphs(paras_a: list[str], paras_b: list[str]) -> list:
+def _compare_paragraphs(paras_a: list[str], paras_b: list[str], detect_moves: bool = True) -> list:
     blocks, _, _ = find_blocks(paras_a, paras_b)
-    return _stitch(paras_a, paras_b, blocks)
+    items = _stitch(paras_a, paras_b, blocks)
+    return _detect_moves(items) if detect_moves else items
 
 
 def _stitch(paras_a: list[str], paras_b: list[str], blocks: list[Block]) -> list:

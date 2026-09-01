@@ -9,8 +9,9 @@ import html
 import string
 from difflib import SequenceMatcher
 
-from .align import Delete, Edit, Identity, Insert
+from .align import Delete, Edit, Identity, Insert, ParagraphGroup
 from .blocks import Block
+from .moves import MovedAway, MovedHere
 from .text import split_words
 
 _CSS = """
@@ -18,6 +19,7 @@ body { font-family: Georgia, serif; max-width: 800px; margin: 2em auto; line-hei
 ins { color: #0a7d2c; text-decoration: underline; background: #e6ffe9; }
 del { color: #b3001b; text-decoration: line-through; background: #ffe6e6; }
 p.identity { color: #333; }
+.moved { color: #7a5c00; background: #fff6dc; }
 h1, h2, h3, h4, h5, h6 { font-family: Georgia, serif; }
 """
 
@@ -32,7 +34,7 @@ WORD_CHAR_THRESHOLD = 0.5
 
 
 def render_html(items: list, style_by_text: dict | None = None) -> str:
-    """Render a list of Block/Identity/Edit/Insert/Delete items to HTML.
+    """Render a list of Block/ParagraphGroup items to HTML.
 
     style_by_text (added 2026-07-12, see readers/JOURNAL_2026-07-12.md
     "Option A"): optional map of exact paragraph text -> style (e.g.
@@ -65,20 +67,58 @@ def _tag_for(text: str, style_by_text: dict | None) -> str:
 def _render_item(item, style_by_text: dict | None = None) -> str:
     if isinstance(item, Block):
         return _render_block(item, style_by_text)
+    if isinstance(item, ParagraphGroup):
+        return _render_paragraph_group(item, style_by_text)
+    raise TypeError(f"unknown top-level redline item: {type(item)!r}")
+
+
+def _render_paragraph_group(group: ParagraphGroup, style_by_text: dict | None = None) -> str:
+    """Render one paragraph's worth of sentence-level ops (Identity/Edit/
+    Insert/Delete) as a single <p> (or <hN> -- see _tag_for). Added with
+    the 2026-07-21 sentence-flattening rework (see align.py's module
+    docstring): matching now happens purely at sentence granularity, so
+    a paragraph is no longer one item, it's a group of them -- rendered
+    inline here and wrapped in one block-level tag, the same visual shape
+    the old per-paragraph items used to produce directly."""
+    inline = " ".join(_render_inline(item) for item in group.items)
+    tag = _tag_for_group(group, style_by_text)
+    if all(isinstance(item, Identity) for item in group.items):
+        return f"<{tag} class='identity'>{inline}</{tag}>"
+    return f"<{tag}>{inline}</{tag}>"
+
+
+def _tag_for_group(group: ParagraphGroup, style_by_text: dict | None) -> str:
+    """Heading-tag lookup for a whole group, keyed off its first item --
+    a heading is typically its own single-sentence paragraph (see
+    readers.split_into_sections), so the first item's text is normally
+    the whole group. Edit falls back from text_a to text_b, matching the
+    old per-item lookup's behavior."""
+    if not group.items:
+        return "p"
+    first = group.items[0]
+    if isinstance(first, Edit):
+        tag = _tag_for(first.text_a, style_by_text)
+        return tag if tag != "p" else _tag_for(first.text_b, style_by_text)
+    return _tag_for(first.text, style_by_text)
+
+
+def _render_inline(item) -> str:
+    """Render one Identity/Edit/Insert/Delete item's content with no
+    wrapping block-level tag -- _render_paragraph_group adds that once
+    per group, not once per sentence."""
     if isinstance(item, Identity):
-        return _paragraphs(item.text, "identity", style_by_text)
+        return html.escape(item.text)
     if isinstance(item, Insert):
-        tag = _tag_for(item.text, style_by_text)
-        return f"<{tag}><ins>{html.escape(item.text)}</ins></{tag}>"
+        return f"<ins>{html.escape(item.text)}</ins>"
     if isinstance(item, Delete):
-        tag = _tag_for(item.text, style_by_text)
-        return f"<{tag}><del>{html.escape(item.text)}</del></{tag}>"
+        return f"<del>{html.escape(item.text)}</del>"
     if isinstance(item, Edit):
-        tag = _tag_for(item.text_a, style_by_text)
-        if tag == "p":
-            tag = _tag_for(item.text_b, style_by_text)
-        return f"<{tag}>{_render_edit(item)}</{tag}>"
-    raise TypeError(f"unknown redline item: {type(item)!r}")
+        return _render_edit(item)
+    if isinstance(item, MovedAway):
+        return f"<span class='moved'>{{moved {item.direction}}}</span>"
+    if isinstance(item, MovedHere):
+        return f"<span class='moved'>{{moved from {item.direction}}} {html.escape(item.text)}</span>"
+    raise TypeError(f"unknown inline redline item: {type(item)!r}")
 
 
 def _render_block(block: Block, style_by_text: dict | None = None) -> str:
